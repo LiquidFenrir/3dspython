@@ -1,0 +1,13 @@
+--atlas -f rgba8 -z auto
+button_left.png
+button_right.png
+button_mid.png
+shift_off.png
+shift_on.png
+shift_full.png
+backspace.png
+symbols.png
+text.png
+send.png
+first.png
+last.png

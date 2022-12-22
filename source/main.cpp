@@ -36,7 +36,8 @@ int main(int argc, char **argv)
     C2D_SpriteSheet sprites = C2D_SpriteSheetLoad("romfs:/gfx/sprites.t3x");
     int retval = 0;
     {
-    application app(mono_font, sprites);
+    auto app_ptr = std::make_unique<application>(mono_font, sprites);
+    auto& app = *app_ptr;
 
     touchPosition touch;
     while(aptMainLoop() && !app.return_value())
@@ -49,8 +50,12 @@ int main(int argc, char **argv)
         const u32 kHeld = hidKeysHeld();
         const u32 kUp = hidKeysUp();
 
-        app.read_output(3);
+        app.read_output(10);
 
+        if(kDown & KEY_START)
+        {
+            break;
+        }
         if(kDown & KEY_A)
         {
             app.press_key("\n", !(kDownRepeat & ~kDown & KEY_A));

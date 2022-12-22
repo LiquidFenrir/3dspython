@@ -43,10 +43,10 @@ static inline constexpr std::array<u32, 256> buildColorTable()
     return colorTable;
 }
 struct screen {
-    static constexpr inline std::size_t ROWS = 14;
+    static constexpr inline std::size_t ROWS = 12;
     static constexpr inline std::size_t COLS = 30;
     std::size_t cursor_x{0}, cursor_y{0}, scroll_x{0};
-    static inline constexpr float TEXT_SCALE = 0.5f + (1.0f / 8);
+    static inline constexpr float TEXT_SCALE = 0.5f + (1.0f / 4);
     unsigned frame_counter{0};
     bool cursor_visible{true};
 
@@ -59,10 +59,10 @@ struct screen {
         bool have_fg;
     };
     struct row {
-        std::u32string value{};
+        std::u32string value;
         std::array<character, COLS> chars;
-        C2D_TextBuf buf{};
-        bool updated{false};
+        C2D_TextBuf buf;
+        bool updated;
     };
 
     std::array<row, ROWS> row_elems;
@@ -91,6 +91,4 @@ private:
     float charW, charH;
     u32 bg, fg;
     unsigned flags;
-    static constexpr inline unsigned DEFAULT_BG_IDX = 0;
-    static constexpr inline unsigned DEFAULT_FG_IDX = 7;
 };

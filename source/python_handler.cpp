@@ -16,15 +16,12 @@ extern "C" {
 }
 
 #define FORCED_EXIT (0x100)
-static int do_str(std::string_view src, mp_parse_input_kind_t input_kind = MP_PARSE_SINGLE_INPUT)
+template<typename T>
+static int do_run(T&& callback)
 {
     nlr_buf_t nlr;
     if (nlr_push(&nlr) == 0) {
-        mp_lexer_t *lex = mp_lexer_new_from_str_len(MP_QSTR__lt_stdin_gt_, src.data(), src.size(), 0);
-        qstr source_name = lex->source_name;
-        mp_parse_tree_t parse_tree = mp_parse(lex, input_kind);
-        mp_obj_t module_fun = mp_compile(&parse_tree, source_name, input_kind == MP_PARSE_SINGLE_INPUT);
-        mp_call_function_0(module_fun);
+        callback();
         nlr_pop();
         return 0;
     } else {
@@ -41,7 +38,9 @@ static int do_str(std::string_view src, mp_parse_input_kind_t input_kind = MP_PA
         }
         else
         {
-            mp_obj_print_exception(&mp_plat_print, (mp_obj_t)nlr.ret_val);
+            Printer::print("\e[31m");
+            mp_obj_print_exception(&mp_plat_print, MP_OBJ_FROM_PTR(nlr.ret_val));
+            Printer::print("\e[0m");
         }
         return -1;
     }
@@ -52,14 +51,15 @@ python_handler::python_handler(std::span<std::string_view> import_search_paths_a
 {
     LightEvent_Init(&stop_event, RESET_ONESHOT);
     LightEvent_Init(&new_event, RESET_ONESHOT);
-    line_done = true;
+    line_done = false;
+
+    Printer::payload = this;
+    Printer::callback = &python_handler::print_callback;
 
     ctr::thread::meta meta = ctr::thread::basic_meta;
     meta.stack_size = 80 * 1024;
     meta.prio += 1;
     self_thread = ctr::thread(meta, &python_handler::loop_func, this);
-    Printer::payload = this;
-    Printer::callback = &python_handler::print_callback;
 }
 
 python_handler::~python_handler()
@@ -70,6 +70,7 @@ python_handler::~python_handler()
 
 int python_handler::read(std::string& into)
 {
+    std::unique_lock lk(out_queue_mut);
     if(out_text.empty())
     {
         return line_done ? 0 : -1;
@@ -89,8 +90,12 @@ std::optional<int> python_handler::should_exit() const
 
 void python_handler::signal_stop()
 {
+    // stops the loop
     LightEvent_Signal(&stop_event);
+    // starts a new iteration to notice the loop should stop
     LightEvent_Signal(&new_event);
+    // stops running code if any, to cause a new iteration
+    signal_interrupt();
 }
 void python_handler::signal_interrupt()
 {
@@ -136,6 +141,10 @@ void python_handler::loop_func()
     }
     mp_obj_list_init((mp_obj_list_t*)MP_OBJ_TO_PTR(mp_sys_argv), 0);
 
+    line_done = true;
+    auto repl_locals = mp_locals_get();
+    auto repl_globals = mp_globals_get();
+
     std::string line;
     while(true)
     {
@@ -151,10 +160,23 @@ void python_handler::loop_func()
         in_text.pop();
         }
 
-        const int r = do_str(line);
-        if(r > 0 && r & FORCED_EXIT)
+        if(!line.empty())
         {
-            should_exit_opt = r & 0xff;
+            const auto run_file_callback = [&]() {
+                mp_lexer_t *lex = mp_lexer_new_from_file(line.c_str() + 1);
+                mp_obj_t file_globals = mp_obj_new_dict(1);
+                mp_obj_t file_locals = mp_obj_new_dict(1);
+                mp_parse_compile_execute(lex, MP_PARSE_FILE_INPUT, (mp_obj_dict_t*)MP_OBJ_TO_PTR(file_globals), (mp_obj_dict_t*)MP_OBJ_TO_PTR(file_locals));
+            };
+            const auto run_line_callback = [&]() {
+                mp_lexer_t *lex = mp_lexer_new_from_str_len(MP_QSTR__lt_stdin_gt_, line.c_str(), line.size(), 0);
+                mp_parse_compile_execute(lex, MP_PARSE_SINGLE_INPUT, repl_globals, repl_locals);
+            };
+            const int r = line.front() == '\0' ? do_run(run_file_callback) : do_run(run_line_callback);
+            if(r > 0 && r & FORCED_EXIT)
+            {
+                should_exit_opt = r & 0xff;
+            }
         }
         line_done = true;
     }

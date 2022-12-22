@@ -22,6 +22,7 @@ void history::copy_to_current()
     if(last != current)
     {
         contents[current] = contents[last];
+        last = current;
     }
 }
 
@@ -36,6 +37,7 @@ void history::validate()
     else
     {
         ++current;
+        ++last;
     }
 }
 

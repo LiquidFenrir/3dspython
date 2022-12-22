@@ -29,11 +29,14 @@
 #define MICROPY_PY_THREAD                       (1)
 #define MICROPY_PY_SYS_STDFILES                 (0)
 #define MICROPY_PY_SYS_PATH_ARGV_DEFAULTS       (0)
+#define MICROPY_PY_SYS_PS1_PS2                  (0)
 
 #define MICROPY_VFS                             (1)
 #define MICROPY_VFS_POSIX                       (1)
 #define MICROPY_READER_VFS                      (1)
 #define MICROPY_PY_BUILTINS_INPUT               (0)
+#define MICROPY_PY_ALL_INPLACE_SPECIAL_METHODS  (1)
+#define MICROPY_PY_URE_MATCH_GROUPS             (1)
 // #define MICROPY_DEBUG_VERBOSE                   (1)
 
 #define MICROPY_PORT_BUILTINS \

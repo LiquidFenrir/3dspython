@@ -37,6 +37,9 @@ private:
     history hist;
 
     void send_repl_line();
+    void start_repl_line(bool is_cont);
+
+    void typing_callback_repl(const char c);
 
     int start_click_x, start_click_y;
     int last_click_x, last_click_y;

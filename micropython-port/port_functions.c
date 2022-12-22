@@ -60,11 +60,6 @@ static mp_obj_t my_input_builtin(size_t n_args, const mp_obj_t *args, mp_map_t *
 }
 MP_DEFINE_CONST_FUN_OBJ_KW(mp_builtin_input_obj, 1, my_input_builtin);
 
-void mp_hal_stdout_tx_strn(const char *str, mp_uint_t len) {
-    extern void app_recv_str(const char *, size_t);
-    app_recv_str(str, len);
-}
-
 void gc_collect(void) {
     gc_collect_start();
     const mp_uint_t stack_use = mp_stack_usage();

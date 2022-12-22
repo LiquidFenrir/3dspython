@@ -14,7 +14,6 @@ application::application(C2D_Font fnt, C2D_SpriteSheet sprites)
     , scr(fnt)
     , keyboard_tbuf(C2D_TextBufNew(512))
     , mono_font(fnt)
-    , current_mode(mode::repl)
 {
     set_keyboard_color(C2D_Color32(0,172,0,255));
 
@@ -30,23 +29,82 @@ application::application(C2D_Font fnt, C2D_SpriteSheet sprites)
     send_img = C2D_SpriteSheetGetImage(sprites, 9);
     first_img = C2D_SpriteSheetGetImage(sprites, 10);
     last_img = C2D_SpriteSheetGetImage(sprites, 11);
+
+    start_repl_line(false);
 }
 
-void application::press_key(std::string_view key, bool repeat=false)
+void application::press_key(std::string_view key, bool repeat)
 {
     if(currently() == mode::repl)
     {
         if(key == "\n")
         {
+            send_repl_line();
+        }
+        else if(key == "\x08")
+        {
             if(hist.is_hovering())
             {
                 hist.copy_to_current();
             }
-            send_repl_line();
+            auto& into = hist.get_current();
+            if(!into.empty() && (scr.cursor_x + scr.scroll_x - 4) != 0)
+            {
+                const std::size_t idx = scr.cursor_x + scr.scroll_x - 4 - 1;
+                fprintf(stderr, "erase button @ %zd\n", idx);
+                fprintf(stderr, "bef: %s\n", into.c_str());
+                into.erase(idx, 1);
+                fprintf(stderr, "aft: %s\n", into.c_str());
+                scr.print(key);
+            }
+        }
+        else if(key == "\e[A")
+        {
+            hist.get_previous();
+            if(hist.is_hovering())
+            {
+                scr.cursor_x = 4;
+                scr.scroll_x = 0;
+                scr.print("\e[K");
+                scr.print(hist.get_hover());
+            }
+        }
+        else if(key == "\e[B")
+        {
+            if(hist.is_hovering())
+            {
+                hist.get_next();
+                scr.cursor_x = 4;
+                scr.scroll_x = 0;
+                scr.print("\e[K");
+                scr.print(hist.get_hover());
+            }
+        }
+        else if(key == "\e[D")
+        {
+            if(scr.cursor_x + scr.scroll_x != 4)
+            {
+                scr.print(key);
+            }
+            else if(scr.scroll_x > 0)
+            {
+                scr.print(key);
+            }
+        }
+        else if(key == "\e[C")
+        {
+            const auto& into = hist.is_hovering() ? hist.get_hover() : hist.get_current();
+            if((scr.cursor_x + scr.scroll_x) != into.size() + 4)
+            {
+                scr.print(key);
+            }
         }
         else
         {
-            scr.print(key);
+            for(const auto c : key)
+            {
+                typing_callback_repl(c);
+            }
         }
     }
     else if(currently() == mode::waiting)
@@ -72,85 +130,108 @@ void application::click_move_to(int x, int y)
 
 void application::click_release()
 {
-    if(currently() == mode::repl && std::hypot(last_click_x - start_click_x, last_click_y - start_click_y) < 15.0)
+    if(std::hypot(last_click_x - start_click_x, last_click_y - start_click_y) < 15.0)
     {
-        auto callback = [&](const char c) {
-            if(hist.is_hovering())
-            {
-                hist.copy_to_current();
-            }
-            std::string& into = hist.get_current();
-            const std::size_t pos_x = (scr.cursor_x + scr.scroll_x);
-            if(c == '\x08')
-            {
-                into.erase(pos_x, 1);
-                std::string_view sv(&c, 1);
-                scr.print(sv);
-            }
-            else if(c == '\x00')
-            {
-                scr.cursor_x = std::min(screen::COLS - 1, into.size());
-                scr.scroll_x = into.size() >= screen::COLS ? into.size() - scr.cursor_x : 0;
-            }
-            else if(c == '\r')
-            {
-                std::string_view sv(&c, 1);
-                scr.print(sv);
-            }
-            else
-            {
-                if(pos_x == into.size())
-                {
-                    into.push_back(c);
-                    std::string_view sv(&c, 1);
-                    scr.print(sv);
-                }
-                else if(pos_x < into.size())
-                {
-                    into.insert(into.begin() + pos_x, c);
-                    std::string_view sv(&c, 1);
-                    scr.print(sv);
-                    sv = into;
-                    const std::size_t cx = scr.cursor_x;
-                    const std::size_t sx = scr.cursor_x;
-                    scr.print(sv.substr(pos_x + 1, screen::COLS - cx - 1));
-                    scr.cursor_x = cx;
-                    scr.cursor_x = sx;
-                }
-                else // cursor + scroll longer than string, shouldn't happen
-                {
-                    fprintf(stderr, "wtf - %s:%d\n", __FILE__, __LINE__);
-                }
-            }
-        };
-
-        if(keeb.do_press(last_click_x, last_click_y, callback))
+        switch(currently())
         {
-            if(hist.is_hovering())
+        case mode::repl:
+            if(keeb.do_press(last_click_x, last_click_y, [&](const char c) { typing_callback_repl(c); }))
             {
-                hist.copy_to_current();
+                send_repl_line();
             }
-            send_repl_line();
+            break;
+        default:
+            break;
         }
     }
 }
 
-
 void application::send_repl_line()
 {
+    if(hist.is_hovering())
+    {
+        hist.copy_to_current();
+    }
     if(!final_upload.empty())
     {
         final_upload += '\n';
     }
     final_upload += hist.get_current();
+    hist.validate();
+    scr.print("\n");
     if(mp_repl_continue_with_input(final_upload.c_str()))
     {
-        
+        start_repl_line(true);
     }
     else
     {
         handler.write(final_upload);
         final_upload.clear();
+        set_mode(mode::waiting);
+    }
+}
+
+void application::start_repl_line(bool is_cont)
+{
+    set_mode(mode::repl);
+    scr.print(is_cont ? "... " : ">>> ");
+}
+
+void application::typing_callback_repl(const char c)
+{
+    if(hist.is_hovering())
+    {
+        hist.copy_to_current();
+    }
+    std::string& into = hist.get_current();
+    const std::size_t pos_x = (scr.cursor_x + scr.scroll_x) - 4;
+    if(c == '\x08')
+    {
+        if(!into.empty() && pos_x != 0)
+        {
+            const std::size_t idx = pos_x - 1;
+            fprintf(stderr, "erase button @ %zd\n", idx);
+            fprintf(stderr, "bef: %s\n", into.c_str());
+            into.erase(idx, 1);
+            fprintf(stderr, "aft: %s\n", into.c_str());
+            std::string_view sv(&c, 1);
+            scr.print(sv);
+        }
+    }
+    else if(c == '\x00')
+    {
+        scr.cursor_x = std::min(screen::COLS - 1, into.size());
+        scr.scroll_x = into.size() >= screen::COLS ? into.size() - scr.cursor_x : 0;
+    }
+    else if(c == '\r')
+    {
+        std::string_view sv(&c, 1);
+        scr.print(sv);
+    }
+    else
+    {
+        if(pos_x == into.size())
+        {
+            into.push_back(c);
+            std::string_view sv(&c, 1);
+            scr.print(sv);
+        }
+        else if(pos_x < into.size())
+        {
+            into.insert(into.begin() + pos_x, c);
+            std::string_view sv(&c, 1);
+            scr.print(sv);
+            sv = into;
+            const std::size_t cx = scr.cursor_x;
+            const std::size_t sx = scr.scroll_x;
+            scr.print(sv.substr(pos_x + 1, screen::COLS - cx - 1));
+            scr.cursor_x = cx;
+            scr.scroll_x = sx;
+        }
+        else // cursor + scroll longer than string, shouldn't happen
+        {
+            fprintf(stderr, "wtf - %s:%d\n", __FILE__, __LINE__);
+        }
     }
 }
 
@@ -163,14 +244,22 @@ void application::read_output(unsigned up_to)
 {
     std::string current_read;
     int current_read_status = 0;
-    while((current_read_status = handler.read(current_read)) == 1 && --up_to)
+    while(--up_to && (current_read_status = handler.read(current_read)) == 1)
     {
-        scr.print(current_read);
+        std::string_view sv(current_read);
+        while((sv.size() + scr.cursor_x + scr.scroll_x) >= screen::COLS)
+        {
+            auto sub = sv.substr(0, screen::COLS - (scr.cursor_x + scr.scroll_x));
+            scr.print(sub);
+            scr.print("\n");
+            sv.remove_prefix(sub.size());
+        }
+        scr.print(sv);
     }
-    
-    if(current_read_status == 0 && currently() == mode::waiting)
+
+    if(up_to && current_read_status == 0 && currently() == mode::waiting)
     {
-        set_mode(mode::repl);
+        start_repl_line(false);
     }
 }
 
@@ -259,10 +348,10 @@ void application::draw_bottom()
 
 application::mode application::currently() const
 {
-
+    return current_mode;
 }
 
 void application::set_mode(application::mode m)
 {
-
+    current_mode = m;
 }

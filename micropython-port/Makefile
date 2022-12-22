@@ -44,8 +44,7 @@ SRC_LOCAL_C = \
 	port_functions.c \
 	mpthreadport.c \
 	mphalport.c \
-	shared/libc/printf.c \
-	shared/runtime/stdout_helpers.c
+	shared/libc/printf.c
 
 OBJ += $(PY_O)
 OBJ += $(addprefix $(BUILD)/, $(SRC_LOCAL_C:.c=.o))

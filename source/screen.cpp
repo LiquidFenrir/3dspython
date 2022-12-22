@@ -1,6 +1,10 @@
 #include "screen.h"
 #include <algorithm>
 
+static constexpr unsigned DEFAULT_BG_IDX = 0;
+static constexpr unsigned DEFAULT_FG_IDX = 7;
+static constexpr unsigned DEFAULT_FLAGS = CONSOLE_BLINK_SLOW;
+
 screen::screen(C2D_Font fnt_arg)
     : fnt(fnt_arg)
 {
@@ -10,13 +14,20 @@ screen::screen(C2D_Font fnt_arg)
     C2D_TextGetDimensions(&txt, TEXT_SCALE, TEXT_SCALE, &charW, &charH);
     C2D_TextBufDelete(buf);
 
-    flags = 0;
+    flags = CONSOLE_BLINK_SLOW;
     bg = FIXED_COLOR_TABLE[DEFAULT_BG_IDX];
     fg = FIXED_COLOR_TABLE[DEFAULT_FG_IDX];
 
     for(auto& el : row_elems)
     {
         el.buf = C2D_TextBufNew(COLS);
+        el.updated = false;
+        for(auto& c : el.chars)
+        {
+            c.have_fg = false;
+            c.fg = fg;
+            c.bg = bg;
+        }
     }
 }
 screen::~screen()
@@ -63,11 +74,12 @@ void screen::print(std::string_view str)
                 case 'C':
                     {
                     const unsigned parameter = escapeseq.front() == 'C' ? 1 : readStr<unsigned>(escapeseq);
-                    if((cursor_x  + parameter) > (COLS - 1))
+                    if((cursor_x + parameter) > (COLS - 1))
                     {
                         const auto old_x = cursor_x;
                         cursor_x = (COLS - 1);
                         scroll_x += parameter - (cursor_x - old_x);
+                        row_elems[cursor_y].updated = true;
                     }
                     else
                     {
@@ -91,6 +103,7 @@ void screen::print(std::string_view str)
                         {
                             scroll_x -= parameter - old_x;
                         }
+                        row_elems[cursor_y].updated = true;
                     }
                     else
                     {
@@ -181,6 +194,7 @@ void screen::print(std::string_view str)
                         {
                             for(std::size_t y = cursor_y; y < ROWS; ++y)
                             {
+                                row_elems[y].updated = true;
                                 if(y == cursor_y)
                                 {
                                     row_elems[y].value.erase(cursor_x + scroll_x);
@@ -189,6 +203,7 @@ void screen::print(std::string_view str)
                                     {
                                         if(x++ >= cursor_x)
                                         {
+                                            c.have_fg = false;
                                             c.bg = bg;
                                             c.fg = fg;
                                         }
@@ -199,11 +214,11 @@ void screen::print(std::string_view str)
                                     row_elems[y].value.clear();
                                     for(auto& c : row_elems[y].chars)
                                     {
+                                        c.have_fg = false;
                                         c.bg = bg;
                                         c.fg = fg;
                                     }
                                 }
-                                row_elems[y].updated = true;
                             }
                         }
                         break;
@@ -211,6 +226,7 @@ void screen::print(std::string_view str)
                         // BOS -> cursor
                         for(std::size_t y = 0; y <= cursor_y; ++y)
                         {
+                            row_elems[y].updated = true;
                             if(y == cursor_y)
                             {
                                 if(cursor_x + scroll_x)
@@ -221,6 +237,7 @@ void screen::print(std::string_view str)
                                     {
                                         if(x++ < cursor_x)
                                         {
+                                            c.have_fg = false;
                                             c.bg = bg;
                                             c.fg = fg;
                                         }
@@ -231,12 +248,12 @@ void screen::print(std::string_view str)
                             {
                                 for(auto& c : row_elems[y].chars)
                                 {
+                                    c.have_fg = false;
                                     c.bg = bg;
                                     c.fg = fg;
                                 }
                                 row_elems[y].value.clear();
                             }
-                            row_elems[y].updated = true;
                         }
                         break;
                     case '2':
@@ -244,8 +261,10 @@ void screen::print(std::string_view str)
                         for(std::size_t y = 0; y < ROWS; ++y)
                         {
                             row_elems[y].value.clear();
+                            row_elems[y].updated = true;
                             for(auto& c : row_elems[y].chars)
                             {
+                                c.have_fg = false;
                                 c.bg = bg;
                                 c.fg = fg;
                             }
@@ -267,11 +286,13 @@ void screen::print(std::string_view str)
                         // cursor -> EOL
                         {
                         row_elems[cursor_y].value.erase(cursor_x + scroll_x);
+                        row_elems[cursor_y].updated = true;
                         std::size_t x = 0;
                         for(auto& c : row_elems[cursor_y].chars)
                         {
                             if(x++ >= cursor_x)
                             {
+                                c.have_fg = false;
                                 c.bg = bg;
                                 c.fg = fg;
                             }
@@ -282,12 +303,14 @@ void screen::print(std::string_view str)
                         // BOL -> cursor
                         {
                         row_elems[cursor_y].value.erase(0, cursor_x + scroll_x);
+                        row_elems[cursor_y].updated = true;
                         scroll_x = 0;
                         std::size_t x = 0;
                         for(auto& c : row_elems[cursor_y].chars)
                         {
                             if(x++ < cursor_x)
                             {
+                                c.have_fg = false;
                                 c.bg = bg;
                                 c.fg = fg;
                             }
@@ -297,9 +320,11 @@ void screen::print(std::string_view str)
                     case '2':
                         // whole line
                         row_elems[cursor_y].value.clear();
+                        row_elems[cursor_y].updated = true;
                         scroll_x = 0;
                         for(auto& c : row_elems[cursor_y].chars)
                         {
+                            c.have_fg = false;
                             c.bg = bg;
                             c.fg = fg;
                         }
@@ -320,9 +345,9 @@ void screen::print(std::string_view str)
                         switch(code)
                         {
                         case 0: // reset
-                            flags = 0;
+                            flags = DEFAULT_FLAGS;
                             bg    = FIXED_COLOR_TABLE[DEFAULT_BG_IDX];
-                            fg    = FIXED_COLOR_TABLE[1];
+                            fg    = FIXED_COLOR_TABLE[DEFAULT_FG_IDX];
                             break;
                         case 1: // bold
                             flags &= ~CONSOLE_COLOR_FAINT;
@@ -491,7 +516,7 @@ void screen::print(std::string_view str)
                             break;
 
                         case 49: // reset background color
-                            fg = FIXED_COLOR_TABLE[DEFAULT_BG_IDX];
+                            bg = FIXED_COLOR_TABLE[DEFAULT_BG_IDX];
                             break;
                         }
                     } while(escapeseq.front() != 'm');
@@ -535,7 +560,7 @@ void screen::tick()
         frame_counter = 0;
     }
 
-    u8 conversion_buf[5];
+    u8 conversion_buf[17];
 
     for(std::size_t i = 0; i < ROWS; ++i)
     {
@@ -579,15 +604,15 @@ void screen::printChar(char32_t c)
     {
         if((cursor_x + scroll_x) != 0)
         {
-            row_elems[cursor_y].value.erase(cursor_x + scroll_x, 1);
+            row_elems[cursor_y].value.erase(cursor_x + scroll_x - 1, 1);
             row_elems[cursor_y].updated = true;
             if(cursor_x == 0)
                 scroll_x--;
             else
-                cursor_x -= 1;
+                cursor_x--;
         }
     }
-    else
+    else if(c != '\0')
     {
         auto& e = row_elems[cursor_y];
         auto& s = e.value;
@@ -595,7 +620,7 @@ void screen::printChar(char32_t c)
         {
             s.push_back(c);
         }
-        else if(cursor_x + scroll_x < s.size())
+        else if((cursor_x + scroll_x) < s.size())
         {
             s[cursor_x + scroll_x] = c;
         }
@@ -624,13 +649,9 @@ void screen::newLine()
     {
         cursor_y -= 1;
         std::rotate(row_elems.begin(), row_elems.begin() + 1, row_elems.end());
+        row_elems[cursor_y].value.clear();
+        row_elems[cursor_y].updated = true;
     }
-    else
-    {
-        std::rotate(std::make_reverse_iterator(row_elems.begin() + cursor_y), std::make_reverse_iterator(row_elems.begin() + cursor_y + 1), row_elems.rend());
-    }
-    row_elems[cursor_y].value.clear();
-    row_elems[cursor_y].updated = true;
 }
 
 void screen::draw()

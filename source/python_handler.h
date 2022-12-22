@@ -32,8 +32,9 @@ struct python_handler {
 
     // exit code when SystemExit raised
     std::optional<int> should_exit() const;
-    void signal_stop();
     void signal_interrupt();
+
+    std::atomic_bool line_done;
 
 private:
     ctr::thread self_thread;
@@ -42,21 +43,12 @@ private:
     ctr::mutex in_queue_mut;
     ctr::mutex out_queue_mut;
     LightEvent stop_event, new_event;
-    std::atomic_bool line_done;
     std::optional<int> should_exit_opt;
     std::span<std::string_view> import_search_paths;
 
-    void handle_print(std::string_view str)
-    {
-        std::unique_lock lk(out_queue_mut);
-        out_text.emplace(str);
-    }
-
-    static void print_callback(void* handler, std::string_view str)
-    {
-        python_handler* py_handler = (python_handler*)handler;
-        py_handler->handle_print(str);
-    }
+    void signal_stop();
+    void handle_print(std::string_view str);
+    static void print_callback(void* handler, std::string_view str);
 
     void loop_func();
 };

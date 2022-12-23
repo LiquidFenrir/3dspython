@@ -113,7 +113,7 @@ void screen::print(std::string_view str)
                     {
                         const auto old_x = cursor_x;
                         cursor_x = (COLS - 1);
-                        scroll_x += parameter - (cursor_x - old_x);
+                        scroll_x -= parameter - (cursor_x - old_x);
                         row_elems[cursor_y].updated = true;
                     }
                     else
@@ -126,7 +126,7 @@ void screen::print(std::string_view str)
                 case 'D':
                     {
                     const unsigned parameter = escapeseq.front() == 'D' ? 1 : readStr<unsigned>(escapeseq);
-                    if((cursor_x - parameter) < 0)
+                    if(cursor_x < parameter)
                     {
                         const auto old_x = cursor_x;
                         cursor_x = 0;

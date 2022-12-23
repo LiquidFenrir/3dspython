@@ -51,10 +51,7 @@ void application::press_key(std::string_view key, bool repeat)
             if(!into.empty() && (scr.cursor_x + scr.scroll_x - 4) != 0)
             {
                 const std::size_t idx = scr.cursor_x + scr.scroll_x - 4 - 1;
-                fprintf(stderr, "erase button @ %zd\n", idx);
-                fprintf(stderr, "bef: %s\n", into.c_str());
                 into.erase(idx, 1);
-                fprintf(stderr, "aft: %s\n", into.c_str());
                 scr.print(key);
             }
         }
@@ -83,10 +80,6 @@ void application::press_key(std::string_view key, bool repeat)
         else if(key == "\e[D")
         {
             if(scr.cursor_x + scr.scroll_x != 4)
-            {
-                scr.print(key);
-            }
-            else if(scr.scroll_x > 0)
             {
                 scr.print(key);
             }
@@ -192,10 +185,7 @@ void application::typing_callback_repl(const char c)
         if(!into.empty() && pos_x != 0)
         {
             const std::size_t idx = pos_x - 1;
-            fprintf(stderr, "erase button @ %zd\n", idx);
-            fprintf(stderr, "bef: %s\n", into.c_str());
             into.erase(idx, 1);
-            fprintf(stderr, "aft: %s\n", into.c_str());
             std::string_view sv(&c, 1);
             scr.print(sv);
         }

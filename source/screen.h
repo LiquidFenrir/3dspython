@@ -3,6 +3,7 @@
 #include <string_view>
 #include <charconv>
 #include <string>
+#include <vector>
 #include <array>
 
 #include <3ds.h>
@@ -43,10 +44,15 @@ static inline constexpr std::array<u32, 256> buildColorTable()
     return colorTable;
 }
 struct screen {
-    static constexpr inline std::size_t ROWS = 12;
-    static constexpr inline std::size_t COLS = 30;
+    static constexpr inline std::size_t MAX_ROWS = 24;
+    static constexpr inline std::size_t MAX_COLS = 50;
+
+    std::size_t columns() const;
+    std::size_t rows() const;
+    void set_output_buffer_size(std::size_t width, std::size_t height);
+    void set_text_scale(float scale);
+
     std::size_t cursor_x{0}, cursor_y{0}, scroll_x{0};
-    static inline constexpr float TEXT_SCALE = 0.5f + (1.0f / 4);
     unsigned frame_counter{0};
     bool cursor_visible{true};
 
@@ -60,12 +66,12 @@ struct screen {
     };
     struct row {
         std::u32string value;
-        std::array<character, COLS> chars;
-        C2D_TextBuf buf;
-        bool updated;
+        std::vector<character> chars;
+        C2D_TextBuf buf{nullptr};
+        bool updated{false};
     };
 
-    std::array<row, ROWS> row_elems;
+    std::vector<row> row_elems;
 
     screen(C2D_Font fnt_arg);
     ~screen();
@@ -75,6 +81,7 @@ struct screen {
     void draw();
 
 private:
+    void recalculate_sizes();
     void printChar(char32_t c);
     void newLine();
     template<typename T>
@@ -88,6 +95,10 @@ private:
         return out;
     }
     C2D_Font fnt;
+    C2D_TextBuf size_tbuf;
+    float text_scale;
+    std::size_t current_cols, current_rows;
+    std::size_t output_width, output_height;
     float charW, charH;
     u32 bg, fg;
     unsigned flags;

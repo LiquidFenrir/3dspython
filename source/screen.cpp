@@ -1,5 +1,6 @@
 #include "screen.h"
 #include <algorithm>
+#include <cmath>
 
 static constexpr unsigned DEFAULT_BG_IDX = 0;
 static constexpr unsigned DEFAULT_FG_IDX = 7;
@@ -7,20 +8,60 @@ static constexpr unsigned DEFAULT_FLAGS = CONSOLE_BLINK_SLOW;
 
 screen::screen(C2D_Font fnt_arg)
     : fnt(fnt_arg)
+    , output_width(400)
+    , output_height(240)
 {
-    C2D_TextBuf buf = C2D_TextBufNew(2);
-    C2D_Text txt;
-    C2D_TextFontParse(&txt, fnt_arg, buf, "O");
-    C2D_TextGetDimensions(&txt, TEXT_SCALE, TEXT_SCALE, &charW, &charH);
-    C2D_TextBufDelete(buf);
-
-    flags = CONSOLE_BLINK_SLOW;
+    flags = DEFAULT_FLAGS;
     bg = FIXED_COLOR_TABLE[DEFAULT_BG_IDX];
     fg = FIXED_COLOR_TABLE[DEFAULT_FG_IDX];
 
+    size_tbuf = C2D_TextBufNew(2);
+    set_text_scale(0.75f);
+}
+screen::~screen()
+{
     for(auto& el : row_elems)
     {
-        el.buf = C2D_TextBufNew(COLS);
+        C2D_TextBufDelete(el.buf);
+    }
+    C2D_TextBufDelete(size_tbuf);
+}
+
+std::size_t screen::columns() const
+{
+    return current_cols;
+}
+std::size_t screen::rows() const
+{
+    return current_rows;
+}
+void screen::set_text_scale(float scale)
+{
+    text_scale = scale;
+    C2D_Text txt;
+    C2D_TextBufClear(size_tbuf);
+    C2D_TextFontParse(&txt, fnt, size_tbuf, "O");
+    C2D_TextGetDimensions(&txt, text_scale, text_scale, &charW, &charH);
+    recalculate_sizes();
+}
+void screen::set_output_buffer_size(std::size_t width, std::size_t height)
+{
+    output_width = width;
+    output_height = height;
+    recalculate_sizes();
+}
+void screen::recalculate_sizes()
+{
+    current_cols = std::floor(output_width / charW);
+    current_rows = std::floor(output_height / charH);
+    fprintf(stderr, "set screen to %zdx%zd cells @ %.1fx%.1f char, %zdx%zd screen\n", current_cols, current_rows, charW, charH, output_width, output_height);
+    row_elems.resize(current_rows);
+    for(auto& el : row_elems)
+    {
+        C2D_TextBufDelete(el.buf);
+        el.buf = C2D_TextBufNew(current_cols);
+        el.chars.resize(current_cols);
+        el.value.clear();
         el.updated = false;
         for(auto& c : el.chars)
         {
@@ -30,14 +71,6 @@ screen::screen(C2D_Font fnt_arg)
         }
     }
 }
-screen::~screen()
-{
-    for(auto& el : row_elems)
-    {
-        C2D_TextBufDelete(el.buf);
-    }
-}
-
 void screen::print(std::string_view str)
 {
     while(!str.empty())
@@ -65,6 +98,7 @@ void screen::print(std::string_view str)
                     break;
                 case 'B':
                     {
+                    const auto COLS = columns();
                     const unsigned parameter = escapeseq.front() == 'B' ? 1 : readStr<unsigned>(escapeseq);
                     cursor_y  =  (cursor_y + parameter) > (COLS - 1) ? (COLS - 1) : (cursor_y  + parameter);
                     scroll_x = 0;
@@ -73,6 +107,7 @@ void screen::print(std::string_view str)
                     break;
                 case 'C':
                     {
+                    const auto COLS = columns();
                     const unsigned parameter = escapeseq.front() == 'C' ? 1 : readStr<unsigned>(escapeseq);
                     if((cursor_x + parameter) > (COLS - 1))
                     {
@@ -192,7 +227,7 @@ void screen::print(std::string_view str)
                     case '0':
                         // cursor -> EOS
                         {
-                            for(std::size_t y = cursor_y; y < ROWS; ++y)
+                            for(std::size_t y = cursor_y, ROWS = rows(); y < ROWS; ++y)
                             {
                                 row_elems[y].updated = true;
                                 if(y == cursor_y)
@@ -258,7 +293,7 @@ void screen::print(std::string_view str)
                         break;
                     case '2':
                         // whole screen
-                        for(std::size_t y = 0; y < ROWS; ++y)
+                        for(std::size_t y = 0, ROWS = rows(); y < ROWS; ++y)
                         {
                             row_elems[y].value.clear();
                             row_elems[y].updated = true;
@@ -562,9 +597,11 @@ void screen::tick()
 
     u8 conversion_buf[17];
 
-    for(std::size_t i = 0; i < ROWS; ++i)
+    std::size_t idx = 0;
+    const auto COLS = columns();
+    for(auto& el : row_elems)
     {
-        auto& el = row_elems[i];
+        const auto i = idx++;
         if(!el.updated) continue;
 
         el.updated = false;
@@ -633,7 +670,7 @@ void screen::printChar(char32_t c)
         e.chars[cursor_x].bg = bg;
         e.chars[cursor_x].fg = fg;
         cursor_x += 1;
-        if(cursor_x == COLS)
+        if(cursor_x == columns())
         {
             cursor_x -= 1;
             scroll_x += 1;
@@ -645,7 +682,7 @@ void screen::newLine()
     cursor_x = 0;
     scroll_x = 0;
     cursor_y += 1;
-    if(cursor_y == ROWS)
+    if(cursor_y == rows())
     {
         cursor_y -= 1;
         std::rotate(row_elems.begin(), row_elems.begin() + 1, row_elems.end());
@@ -657,6 +694,7 @@ void screen::newLine()
 void screen::draw()
 {
     float y = 0.0f;
+    const auto ROWS = rows(), COLS = columns();
     for(std::size_t y_idx = 0; y_idx < ROWS; ++y_idx, y += charH)
     {
         float x = 0.0f;
@@ -667,7 +705,7 @@ void screen::draw()
             C2D_DrawRectSolid(x, y, 0.0f, charW, charH, c.bg);
             if(c.have_fg)
             {
-                C2D_DrawText(&c.text, C2D_WithColor, x, y, 0.25f, TEXT_SCALE, TEXT_SCALE, c.fg);
+                C2D_DrawText(&c.text, C2D_WithColor, x, y, 0.25f, text_scale, text_scale, c.fg);
             }
             if(x_idx == cursor_x && y_idx == cursor_y && cursor_visible)
             {

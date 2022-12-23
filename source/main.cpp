@@ -32,7 +32,7 @@ int main(int argc, char **argv)
     C3D_RenderTarget* bottom = C2D_CreateScreenTarget(GFX_BOTTOM, GFX_LEFT);
 
     romfsInit();
-    C2D_Font mono_font = C2D_FontLoad("romfs:/gfx/NotoSansMono-Medium.bcfnt");
+    C2D_Font mono_font = C2D_FontLoad("romfs:/gfx/default_display_font.bcfnt");
     C2D_SpriteSheet sprites = C2D_SpriteSheetLoad("romfs:/gfx/sprites.t3x");
     int retval = 0;
     {

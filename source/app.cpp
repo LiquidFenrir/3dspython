@@ -166,6 +166,7 @@ void application::send_repl_line()
     else
     {
         handler.write(final_upload);
+        scr.print("\e[25m");
         final_upload.clear();
         set_mode(mode::waiting);
     }
@@ -174,6 +175,7 @@ void application::send_repl_line()
 void application::start_repl_line(bool is_cont)
 {
     set_mode(mode::repl);
+    scr.print("\e[0m");
     scr.print(is_cont ? "... " : ">>> ");
 }
 
@@ -200,8 +202,8 @@ void application::typing_callback_repl(const char c)
     }
     else if(c == '\x00')
     {
-        scr.cursor_x = std::min(screen::COLS - 1, into.size());
-        scr.scroll_x = into.size() >= screen::COLS ? into.size() - scr.cursor_x : 0;
+        scr.cursor_x = std::min(scr.columns() - 1, into.size());
+        scr.scroll_x = into.size() >= scr.columns() ? into.size() - scr.cursor_x : 0;
     }
     else if(c == '\r')
     {
@@ -224,7 +226,7 @@ void application::typing_callback_repl(const char c)
             sv = into;
             const std::size_t cx = scr.cursor_x;
             const std::size_t sx = scr.scroll_x;
-            scr.print(sv.substr(pos_x + 1, screen::COLS - cx - 1));
+            scr.print(sv.substr(pos_x + 1, scr.columns() - cx - 1));
             scr.cursor_x = cx;
             scr.scroll_x = sx;
         }
@@ -247,9 +249,9 @@ void application::read_output(unsigned up_to)
     while(--up_to && (current_read_status = handler.read(current_read)) == 1)
     {
         std::string_view sv(current_read);
-        while((sv.size() + scr.cursor_x + scr.scroll_x) >= screen::COLS)
+        while((sv.size() + scr.cursor_x + scr.scroll_x) >= scr.columns())
         {
-            auto sub = sv.substr(0, screen::COLS - (scr.cursor_x + scr.scroll_x));
+            auto sub = sv.substr(0, scr.columns() - (scr.cursor_x + scr.scroll_x));
             scr.print(sub);
             scr.print("\n");
             sv.remove_prefix(sub.size());
